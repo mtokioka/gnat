@@ -93,14 +93,10 @@ defmodule Gnat do
   def init(connection_settings) do
     connection_settings = Map.merge(@default_connection_settings, connection_settings)
     {:ok, tcp} = :gen_tcp.connect(connection_settings.host, connection_settings.port, connection_settings.tcp_opts)
-    case perform_handshake(tcp) do
-      :ok ->
-        parser = Parser.new
-        {:ok, %{tcp: tcp, connection_settings: connection_settings, next_sid: 1, receivers: %{}, parser: parser}}
-      {:error, reason} ->
-        :gen_tcp.close(tcp)
-        {:error, reason}
-    end
+
+    parser = Parser.new
+    client = %{tcp: tcp, connection_settings: connection_settings, next_sid: 1, receivers: %{}, parser: parser}
+    {:ok, client}
   end
 
   defp process_message({:msg, topic, sid, reply_to, body}, state) do
@@ -109,6 +105,14 @@ defmodule Gnat do
   defp process_message(:ping, state) do
     :gen_tcp.send(state.tcp, "PONG\r\n")
   end
+  defp process_message({:info, _payload}, state) do
+    # TODO(film42): Store this state and use it to auth or use tls.
+    :gen_tcp.send(state.tcp, "CONNECT {\"verbose\": false}\r\n")
+  end
+  defp process_message({:error, reason}, _state) do
+    IO.inspect "PARSE ERROR! #{reason}"
+  end
+
   def handle_info({:tcp, tcp, data}, %{tcp: tcp, parser: parser}=state) do
     Logger.debug "#{__MODULE__} received #{inspect data}"
     {new_parser, messages} = Parser.parse(parser, data)
@@ -150,15 +154,5 @@ defmodule Gnat do
     command = Command.build(:unsub, sid, opts)
     :ok = :gen_tcp.send(state.tcp, command)
     {:reply, :ok, state}
-  end
-
-  defp perform_handshake(tcp) do
-    receive do
-      {:tcp, ^tcp, operation} ->
-        "INFO" = operation |> String.split |> List.first |> String.upcase
-        :gen_tcp.send(tcp, "CONNECT {\"verbose\": false}\r\n")
-      after 1000 ->
-        {:error, "timed out waiting for info"}
-    end
   end
 end

@@ -1,10 +1,15 @@
 defmodule Gnat.Parser do
   require Logger
+
   # states: waiting, reading_message
   defstruct [
     partial: "",
     state: :waiting,
   ]
+
+  defmodule Info do
+    defstruct [:auth_required, :host, :port, :max_payload, :server_id, :ssl_required, :tls_required, :tls_verify, :version]
+  end
 
   def new, do: %Gnat.Parser{}
 
@@ -23,6 +28,9 @@ defmodule Gnat.Parser do
           :partial_message ->
             parser = %{parser | partial: bytes}
             parse(parser, "", parsed)
+          {:ok, rest} ->
+            # Ignore +OK messages.
+            parse(parser, rest, parsed)
           {message, rest} ->
             parse(parser, rest, [message | parsed])
         end
@@ -38,6 +46,13 @@ defmodule Gnat.Parser do
     |> parse_command(details, body)
   end
 
+  defp parse_command("+OK", _, body), do: {:ok, body}
+  defp parse_command("INFO", [payload], body) do
+    case Poison.decode(payload, as: %Info{}) do
+      {:error, reason} -> {{:error, reason}, body}
+      {:ok, info_map} -> {{:info, info_map}, body}
+    end
+  end
   defp parse_command("PING", _, body), do: {:ping, body}
   defp parse_command("MSG", [topic, sidstr, sizestr], body), do: parse_command("MSG", [topic, sidstr, nil, sizestr], body)
   defp parse_command("MSG", [topic, sidstr, reply_to, sizestr], body) do
