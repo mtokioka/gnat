@@ -32,7 +32,8 @@ defmodule Gnat.Handshake do
     socket_write(connection_settings, socket, "CONNECT #{opts}\r\n")
   end
   defp send_connect_message(socket, _options, connection_settings) do
-    socket_write(connection_settings, socket, "CONNECT {\"verbose\": false}\r\n")
+    #socket_write(connection_settings, socket, "CONNECT {\"verbose\": false}\r\n")
+    socket_write(connection_settings, socket, "CONNECT {}\r\n")
   end
 
   defp upgrade_connection(tcp, %{tls_required: true}, %{tls: true, ssl_opts: opts}) do

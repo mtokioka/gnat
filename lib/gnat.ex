@@ -65,7 +65,17 @@ defmodule Gnat do
   end
   ```
   """
-  def sub(pid, subscriber, topic, opts \\ []), do: GenServer.call(pid, {:sub, subscriber, topic, opts})
+  #def sub(pid, subscriber, topic, opts \\ []), do: GenServer.call(pid, {:sub, subscriber, topic, opts})
+  def sub(pid, subscriber, topic, opts \\ []) do
+    {:ok, subscription} = GenServer.call(pid, {:sub, subscriber, topic, opts, self()})
+    receive do
+      _ -> :ok
+    after 1_000 ->
+     :ok
+    end
+
+    {:ok, subscription}
+  end
 
   @doc """
   Publish a message
@@ -156,7 +166,7 @@ defmodule Gnat do
     case Gnat.Handshake.connect(connection_settings) do
       {:ok, socket} ->
         parser = Parser.new
-        {:ok, %{socket: socket, connection_settings: connection_settings, next_sid: 1, receivers: %{}, parser: parser}}
+        {:ok, %{socket: socket, connection_settings: connection_settings, next_sid: 1, receivers: %{}, parser: parser, subscriber: nil}}
       {:error, reason} ->
         {:stop, reason}
     end
@@ -191,10 +201,10 @@ defmodule Gnat do
     socket_close(state)
     {:stop, :normal, :ok, state}
   end
-  def handle_call({:sub, receiver, topic, opts}, _from, %{next_sid: sid}=state) do
+  def handle_call({:sub, receiver, topic, opts, parent}, _from, %{next_sid: sid}=state) do
     sub = Command.build(:sub, topic, sid, opts)
     :ok = socket_write(state, sub)
-    next_state = add_subscription_to_state(state, sid, receiver) |> Map.put(:next_sid, sid + 1)
+    next_state = add_subscription_to_state(state, sid, receiver) |> Map.put(:next_sid, sid + 1) |> Map.put(:subscriber, parent)
     {:reply, {:ok, sid}, next_state}
   end
   def handle_call({:pub, topic, message, opts}, _from, state) do
@@ -263,6 +273,12 @@ defmodule Gnat do
   defp process_message(:pong, state) do
     send state.pinger, :pong
     state
+  end
+  defp process_message(:verbose_ok, state) do
+    if state.subscriber do
+      send state.subscriber, :verbose_ok
+    end
+    %{state | subscriber: nil}
   end
   defp process_message({:error, message}, state) do
     :error_logger.error_report([
