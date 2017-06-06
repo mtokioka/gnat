@@ -18,7 +18,8 @@ defmodule Gnat.Parser do
   def parse(parser, bytes, parsed) do
     case  :binary.match(bytes, "\r\n") do
       {index, 2} ->
-        {command, "\r\n"<>rest} = String.split_at(bytes, index)
+        [command, rest] = :binary.split(bytes, "\r\n")
+        #{command, "\r\n"<>rest} = String.split_at(bytes, index)
         case parse_command(command, rest) do
           :partial_message ->
             parser = %{parser | partial: bytes}
